@@ -3,11 +3,12 @@ import { CFG, COL, type GameState } from './state';
 import type { Particles, Shockwaves } from './fx';
 import type { Enemies } from './enemies';
 import type { GameAudio } from './audio';
-import { makeHalo } from './glow';
+import { makeHalo, fresnelShell } from './glow';
 
 export interface Orb {
   active: boolean;
   held: boolean;          // attached to a pinch
+  thrown: boolean;        // in ballistic flight (never snap back to its home)
   anchor: number;         // rack anchor index it came from
   mesh: THREE.Mesh;
   vel: THREE.Vector3;
@@ -43,9 +44,11 @@ export class Orbs {
       });
       const mesh = new THREE.Mesh(geo, mat);
       mesh.add(makeHalo(COL.ember, 0.22, 0.45));
+      // soap-film membrane: bright fresnel rim around each floating ember
+      mesh.add(fresnelShell(geo, new THREE.Color('#bfe9ff'), { power: 2.6, intensity: 0.55, scale: 1.55 }));
       mesh.visible = false;
       scene.add(mesh);
-      this.pool.push({ active: false, held: false, anchor: -1, mesh, vel: new THREE.Vector3(), bornAt: 0 });
+      this.pool.push({ active: false, held: false, thrown: false, anchor: -1, mesh, vel: new THREE.Vector3(), bornAt: 0 });
     }
   }
 
@@ -63,11 +66,13 @@ export class Orbs {
   private placeAtAnchor(o: Orb, anchor: number): void {
     o.active = true;
     o.held = false;
+    o.thrown = false;
     o.anchor = anchor;
     o.mesh.visible = true;
     o.mesh.position.copy(this.anchors[anchor]);
     o.vel.set(0, 0, 0);
     o.mesh.scale.setScalar(0.01);
+    this.particles.burst(this.anchors[anchor], 8, this.trailColor(), 0.35, 0.35);
   }
 
   /** Grab the nearest idle orb to `pos`, if within reach. */
@@ -89,6 +94,7 @@ export class Orbs {
 
   release(o: Orb, velocity: THREE.Vector3, s?: GameState): void {
     o.held = false;
+    o.thrown = true;
     o.vel.copy(velocity).multiplyScalar(CFG.orbThrowBoost);
     if (o.vel.length() > CFG.orbSpeedMax) o.vel.setLength(CFG.orbSpeedMax);
     o.bornAt = performance.now() / 1000;
@@ -96,9 +102,10 @@ export class Orbs {
     if (s) s.run.throws += 1;
   }
 
-  /** If a held pinch ends without a throw, return the orb to its rack slot. */
+  /** If a held pinch ends without a throw, return the orb to its home slot. */
   cancel(o: Orb): void {
     o.held = false;
+    o.thrown = false;
     if (o.anchor >= 0) {
       o.mesh.position.copy(this.anchors[o.anchor]);
       o.vel.set(0, 0, 0);
@@ -167,11 +174,32 @@ export class Orbs {
     for (const o of this.pool) {
       if (!o.active || o.held) continue;
 
-      // idle at anchor: gentle bob
-      if (o.anchor >= 0 && o.vel.lengthSq() < 1e-6 && o.mesh.position.distanceTo(this.anchors[o.anchor]) < 0.02) {
-        o.mesh.position.copy(this.anchors[o.anchor]);
-        o.mesh.position.y += Math.sin(now * 2.2 + o.anchor * 1.7) * 0.008;
-        o.mesh.scale.setScalar(Math.min(1, o.mesh.scale.x + dt * 4));
+      // idle: drift around its home like a soap bubble
+      if (o.anchor >= 0 && !o.thrown && o.vel.lengthSq() < 1e-6) {
+        const home = this.anchors[o.anchor];
+        const t = now + o.anchor * 2.399; // golden-angle phase spread
+        o.mesh.position.set(
+          home.x + Math.sin(t * 0.52) * 0.055 + Math.sin(t * 0.21 + 1.7) * 0.035,
+          home.y + Math.sin(t * 0.63 + 0.9) * 0.045 + Math.sin(t * 0.17) * 0.03,
+          home.z + Math.cos(t * 0.47 + 2.1) * 0.05,
+        );
+        // bubbles never overlap: push apart from nearby idle embers
+        for (const b of this.pool) {
+          if (b === o || !b.active || b.held || b.anchor < 0 || b.vel.lengthSq() >= 1e-6) continue;
+          const dx = o.mesh.position.x - b.mesh.position.x;
+          const dy = o.mesh.position.y - b.mesh.position.y;
+          const dz = o.mesh.position.z - b.mesh.position.z;
+          const d2 = dx * dx + dy * dy + dz * dz;
+          if (d2 > 1e-6 && d2 < 0.0144) { // < 0.12 m
+            const inv = 1 / Math.sqrt(d2);
+            const push = (0.12 - Math.sqrt(d2)) * 0.5;
+            o.mesh.position.x += dx * inv * push;
+            o.mesh.position.y += dy * inv * push;
+            o.mesh.position.z += dz * inv * push;
+          }
+        }
+        const s = Math.min(1, o.mesh.scale.x + dt * 4);
+        o.mesh.scale.setScalar(s >= 1 ? 1 + Math.sin(now * 2.8 + o.anchor * 1.7) * 0.035 : s);
         continue;
       }
 

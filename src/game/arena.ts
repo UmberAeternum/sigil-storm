@@ -195,17 +195,25 @@ export function buildArena(scene: THREE.Scene, envMap: THREE.Texture): Arena {
   portalLight.position.copy(CFG.portalPos);
   world.add(portalLight);
 
-  // ── ember rack (anchors + soft cradles) ────────────────────────────────────
+  // ── ember field: scattered "bubble homes" + faint nesting rings ───────────
   const rackAnchors: THREE.Vector3[] = [];
-  const anchorGeo = new THREE.TorusGeometry(0.05, 0.007, 8, 24);
+  const anchorGeo = new THREE.TorusGeometry(0.062, 0.008, 8, 24);
   for (let i = 0; i < CFG.rackCount; i++) {
-    const a = ((-CFG.rackSpreadDeg / 2) + (CFG.rackSpreadDeg * i) / (CFG.rackCount - 1)) * (Math.PI / 180);
-    const p = new THREE.Vector3(Math.sin(a) * CFG.rackRadius, CFG.rackHeight, -Math.cos(a) * CFG.rackRadius);
+    const base = ((-CFG.rackSpreadDeg / 2) + (CFG.rackSpreadDeg * i) / (CFG.rackCount - 1)) * (Math.PI / 180);
+    const a = base + (Math.random() - 0.5) * 0.42;
+    const r = CFG.rackRadius * (0.85 + Math.random() * 0.35);
+    const p = new THREE.Vector3(
+      Math.sin(a) * r,
+      CFG.rackHeight + (Math.random() - 0.5) * 0.3,
+      -Math.cos(a) * r - Math.random() * 0.12,
+    );
     rackAnchors.push(p);
     const anchor = new THREE.Mesh(anchorGeo, new THREE.MeshBasicMaterial({
-      color: 0x6a5cd0, transparent: true, opacity: 0.6, blending: THREE.AdditiveBlending,
+      color: 0x6a5cd0, transparent: true, opacity: 0.28, blending: THREE.AdditiveBlending,
     }));
     anchor.position.copy(p);
+    anchor.rotation.x = Math.random() * Math.PI;
+    anchor.rotation.y = Math.random() * Math.PI;
     world.add(anchor);
   }
 
