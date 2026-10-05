@@ -1,0 +1,228 @@
+import * as THREE from 'three';
+import { CFG, COL } from './state';
+import {
+  fresnelShell, makeHalo, portalSwirlMaterial, moodSky, runeCircleTexture, tickFresnel, softGlowTexture,
+} from './glow';
+
+export interface Arena {
+  world: THREE.Group;
+  core: THREE.Group;
+  coreCrystal: THREE.Mesh;
+  hpRing: THREE.Mesh;
+  portal: THREE.Group;
+  portalMat: THREE.ShaderMaterial;
+  rackAnchors: THREE.Vector3[];
+  startOrb: THREE.Mesh;
+  restartOrb: THREE.Mesh;
+  runes: THREE.Mesh;
+  rim: THREE.Mesh;
+  skyUniforms: { top: { value: THREE.Color }; bottom: { value: THREE.Color }; horizon: { value: THREE.Color } };
+  lights: {
+    hemi: THREE.HemisphereLight;
+    coreLight: THREE.PointLight;
+    portalLight: THREE.PointLight;
+    accentLight: THREE.PointLight;
+  };
+  fresnels: THREE.Mesh[];
+  update(t: number, slowActive: boolean): void;
+}
+
+export function buildArena(scene: THREE.Scene, envMap: THREE.Texture): Arena {
+  const world = new THREE.Group(); // shaken for impact juice
+  scene.add(world);
+
+  // ── mood sky dome ──────────────────────────────────────────────────────────
+  const sky = moodSky();
+  world.add(sky.mesh);
+
+  // ── starfield + dust (soft round sprites now) ──────────────────────────────
+  const starGeo = new THREE.BufferGeometry();
+  const starN = 650;
+  const starPos = new Float32Array(starN * 3);
+  for (let i = 0; i < starN; i++) {
+    const r = 16 + Math.random() * 18;
+    const th = Math.random() * Math.PI * 2;
+    const ph = Math.acos(Math.random() * 1.6 - 0.8);
+    starPos[i * 3] = r * Math.sin(ph) * Math.cos(th);
+    starPos[i * 3 + 1] = Math.abs(r * Math.cos(ph)) * 0.8 - 2;
+    starPos[i * 3 + 2] = r * Math.sin(ph) * Math.sin(th);
+  }
+  starGeo.setAttribute('position', new THREE.BufferAttribute(starPos, 3));
+  const stars = new THREE.Points(starGeo, new THREE.PointsMaterial({
+    color: 0xa99ce0, size: 0.06, sizeAttenuation: true,
+    transparent: true, opacity: 0.85, depthWrite: false,
+    map: softGlowTexture(),
+    blending: THREE.AdditiveBlending,
+  }));
+  world.add(stars);
+
+  const dustGeo = new THREE.BufferGeometry();
+  const dustN = 140;
+  const dustPos = new Float32Array(dustN * 3);
+  for (let i = 0; i < dustN; i++) {
+    dustPos[i * 3] = (Math.random() - 0.5) * 3.4;
+    dustPos[i * 3 + 1] = 0.3 + Math.random() * 2.0;
+    dustPos[i * 3 + 2] = (Math.random() - 0.5) * 3.4 - 0.6;
+  }
+  dustGeo.setAttribute('position', new THREE.BufferAttribute(dustPos, 3));
+  const dust = new THREE.Points(dustGeo, new THREE.PointsMaterial({
+    color: 0x8a7fd0, size: 0.02, sizeAttenuation: true,
+    transparent: true, opacity: 0.5, depthWrite: false,
+    blending: THREE.AdditiveBlending,
+  }));
+  world.add(dust);
+
+  // ── stone altar: dark PBR disc + emissive rune circle ─────────────────────
+  const altar = new THREE.Mesh(
+    new THREE.CylinderGeometry(1.7, 1.95, 0.16, 48, 1),
+    new THREE.MeshStandardMaterial({
+      color: 0x1c1830, roughness: 0.38, metalness: 0.25,
+      envMap, envMapIntensity: 0.7,
+    }),
+  );
+  altar.position.set(0, -0.14, -0.4);
+  world.add(altar);
+  const runes = new THREE.Mesh(
+    new THREE.RingGeometry(1.05, 1.62, 48),
+    new THREE.MeshBasicMaterial({
+      map: runeCircleTexture(), transparent: true, opacity: 0.85,
+      blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide,
+    }),
+  );
+  runes.rotation.x = -Math.PI / 2;
+  runes.position.set(0, -0.055, -0.4);
+  world.add(runes);
+
+  // ── the core crystal: faceted PBR cluster + fresnel shell + halo ──────────
+  const core = new THREE.Group();
+  core.position.copy(CFG.corePos);
+  world.add(core);
+  const crystalGeo = new THREE.OctahedronGeometry(0.16);
+  const coreCrystal = new THREE.Mesh(
+    crystalGeo,
+    new THREE.MeshPhysicalMaterial({
+      color: 0xbfe9ff, roughness: 0.06, metalness: 0,
+      envMap, envMapIntensity: 2.4,
+      clearcoat: 1, clearcoatRoughness: 0.08,
+      emissive: COL.core, emissiveIntensity: 1.2,
+    }),
+  );
+  coreCrystal.scale.y = 1.75;
+  core.add(coreCrystal);
+  const coreShell = fresnelShell(crystalGeo, COL.core, { power: 2.0, intensity: 2.2, scale: 1.5 });
+  coreShell.scale.y = 1.75 * 1.5;
+  core.add(coreShell);
+  const coreHalo = makeHalo(COL.core, 0.85, 0.4);
+  core.add(coreHalo);
+  const coreLight = new THREE.PointLight(COL.core, 2.4, 6);
+  core.add(coreLight);
+
+  const hpRing = new THREE.Mesh(
+    new THREE.TorusGeometry(0.3, 0.016, 8, 48),
+    new THREE.MeshBasicMaterial({ color: 0x7ef0c2 }),
+  );
+  hpRing.rotation.x = Math.PI / 2;
+  hpRing.position.y = -0.03;
+  core.add(hpRing);
+
+  const pedestal = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.075, 0.12, 0.34, 6),
+    new THREE.MeshStandardMaterial({ color: 0x241f42, roughness: 0.3, metalness: 0.5, envMap, envMapIntensity: 0.9 }),
+  );
+  pedestal.position.y = -0.33;
+  core.add(pedestal);
+
+  // ── spawn portal: shader swirl + fresnel rings ────────────────────────────
+  const portal = new THREE.Group();
+  portal.position.copy(CFG.portalPos);
+  portal.lookAt(CFG.corePos.x, CFG.portalPos.y, CFG.corePos.z);
+  world.add(portal);
+  const portalMat = portalSwirlMaterial(new THREE.Color('#ff5470'), new THREE.Color('#b36bff'));
+  const portalDisc = new THREE.Mesh(new THREE.CircleGeometry(0.8, 48), portalMat);
+  portal.add(portalDisc);
+  const ringGeo = new THREE.TorusGeometry(0.85, 0.045, 12, 64);
+  const ring1 = new THREE.Mesh(ringGeo, new THREE.MeshStandardMaterial({
+    color: 0x3a1030, roughness: 0.25, metalness: 0.85, envMap, envMapIntensity: 1.4,
+    emissive: COL.wisp, emissiveIntensity: 0.55,
+  }));
+  const ring2 = new THREE.Mesh(new THREE.TorusGeometry(0.66, 0.026, 10, 48), new THREE.MeshBasicMaterial({ color: 0xb36bff, transparent: true, opacity: 0.8 }));
+  portal.add(ring1, ring2);
+  const portalHalo = makeHalo(COL.wisp, 3.2, 0.3);
+  portal.add(portalHalo);
+  const portalLight = new THREE.PointLight(COL.wisp, 1.5, 11);
+  portalLight.position.copy(CFG.portalPos);
+  world.add(portalLight);
+
+  // ── ember rack (anchors + soft cradles) ────────────────────────────────────
+  const rackAnchors: THREE.Vector3[] = [];
+  const anchorGeo = new THREE.TorusGeometry(0.05, 0.007, 8, 24);
+  for (let i = 0; i < CFG.rackCount; i++) {
+    const a = ((-CFG.rackSpreadDeg / 2) + (CFG.rackSpreadDeg * i) / (CFG.rackCount - 1)) * (Math.PI / 180);
+    const p = new THREE.Vector3(Math.sin(a) * CFG.rackRadius, CFG.rackHeight, -Math.cos(a) * CFG.rackRadius);
+    rackAnchors.push(p);
+    const anchor = new THREE.Mesh(anchorGeo, new THREE.MeshBasicMaterial({
+      color: 0x6a5cd0, transparent: true, opacity: 0.6, blending: THREE.AdditiveBlending,
+    }));
+    anchor.position.copy(p);
+    world.add(anchor);
+  }
+
+  // ── menu / restart orbs with halos ─────────────────────────────────────────
+  const orbGeo = new THREE.SphereGeometry(0.07, 24, 16);
+  const startOrb = new THREE.Mesh(orbGeo, new THREE.MeshStandardMaterial({
+    color: 0x123b2c, roughness: 0.15, metalness: 0.1, envMap, envMapIntensity: 1.6,
+    emissive: COL.runeOk, emissiveIntensity: 1.6,
+  }));
+  startOrb.add(fresnelShell(orbGeo, COL.runeOk, { power: 2.2, intensity: 2.0 }));
+  startOrb.add(makeHalo(COL.runeOk, 0.5, 0.6));
+  startOrb.position.set(0, 0.9, -0.7);
+  startOrb.scale.setScalar(1.4);
+  world.add(startOrb);
+  const restartOrb = new THREE.Mesh(orbGeo, new THREE.MeshStandardMaterial({
+    color: 0x3b2a12, roughness: 0.15, metalness: 0.1, envMap, envMapIntensity: 1.6,
+    emissive: COL.ember, emissiveIntensity: 1.6,
+  }));
+  restartOrb.add(fresnelShell(orbGeo, COL.ember, { power: 2.2, intensity: 2.0 }));
+  restartOrb.add(makeHalo(COL.ember, 0.5, 0.6));
+  restartOrb.position.set(0, 0.9, -0.7);
+  restartOrb.scale.setScalar(1.4);
+  restartOrb.visible = false;
+  world.add(restartOrb);
+
+  // ── lights ─────────────────────────────────────────────────────────────────
+  const hemi = new THREE.HemisphereLight(0x8a7fd0, 0x1a1430, 1.05);
+  scene.add(hemi);
+  const accentLight = new THREE.PointLight(0x8f7bff, 1.6, 9);
+  scene.add(accentLight);
+
+  scene.fog = new THREE.FogExp2(0x05060d, 0.04);
+
+  const fresnels = [coreShell];
+
+  const update = (t: number, slowActive: boolean): void => {
+    coreCrystal.rotation.y = t * 0.8;
+    coreCrystal.rotation.x = Math.sin(t * 0.6) * 0.2;
+    const pulse = 1 + Math.sin(t * 3) * 0.06;
+    coreCrystal.scale.set(pulse, 1.75 * pulse, pulse);
+    coreHalo.material.opacity = 0.32 + Math.abs(Math.sin(t * 2.4)) * 0.16;
+    ring1.rotation.z = t * 0.55;
+    ring1.rotation.y = Math.sin(t * 0.4) * 0.15;
+    ring2.rotation.z = -t * 0.9;
+    portalMat.uniforms.uTime.value = t;
+    dust.rotation.y = t * 0.012;
+    stars.rotation.y = t * 0.004;
+    startOrb.position.y = 0.9 + Math.sin(t * 2.2) * 0.02;
+    startOrb.scale.setScalar(1.4 * (1 + Math.sin(t * 2.2) * 0.08));
+    restartOrb.position.y = 0.9 + Math.sin(t * 2.6) * 0.025;
+    restartOrb.scale.setScalar(1.4 * (1 + Math.sin(t * 2.6) * 0.1));
+    for (const f of fresnels) tickFresnel(f, t);
+    void slowActive;
+  };
+
+  return {
+    world, core, coreCrystal, hpRing, portal, portalMat, rackAnchors,
+    startOrb, restartOrb, runes, rim: runes, skyUniforms: sky.uniforms,
+    lights: { hemi, coreLight, portalLight, accentLight },
+    fresnels, update,
+  };
+}
