@@ -9,6 +9,9 @@ no roomscale — the entire game lives inside a two-foot radius.
 Built with Three.js + WebXR. Zero assets: every material, shader, sound and texture is
 procedural, so cold start is instant.
 
+**Live:** https://umberaeternum.github.io/sigil-storm/ — open on a Quest in the Meta Quest
+Browser (press ENTER VR), or in any desktop browser for preview mode.
+
 ## The look: the "Lumen" ambient system
 
 The environment is an instrument. Lights, fog, sky gradient, bloom and reflections react to
@@ -49,7 +52,16 @@ On a Quest, open the hosted URL in the Meta Quest Browser and press **ENTER VR**
 
 The build is a static bundle with relative paths — it works on any static host:
 
-- **GitHub Pages**: push `dist/` to a `gh-pages` branch (or use `npx gh-pages -d dist`).
+- **GitHub Pages** (active): `dist/` holds its own git repo on the `gh-pages` branch,
+  served at https://umberaeternum.github.io/sigil-storm/. Redeploy after a build:
+
+  ```bash
+  npm run build
+  cd dist
+  git add -A && git commit -m "deploy: build"
+  git push origin gh-pages
+  ```
+
 - **Vercel / Netlify**: point the project at the repo, build command `npm run build`,
   output directory `dist`.
 
