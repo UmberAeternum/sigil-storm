@@ -21,6 +21,11 @@ gameplay in real time:
 - A **core hit** floods everything crimson with an alarm pulse.
 - **Bullet time** drowns the scene in violet while enemies crawl.
 - The base palette drifts from cold indigo → storm crimson as waves climb — you can *feel* danger rising.
+- **Tempest Edition visuals**: a procedural nebula sky with twin twinkling starfields that clouds
+  over with storm crimson as danger climbs; a living plasma heart inside the core crystal with
+  orbiting motes and volumetric light shafts; a layered counter-rotating portal vortex that surges
+  with every wave; comet-tailed wisps that implode before they burst; expanding rune mandalas on
+  the altar floor for every cast; a nova pillar of light; and a barrier energy shell.
 - PBR materials with a custom-matched environment map, fresnel energy shells, halo billboards
   (Quest-safe fake bloom), soft glow particles, ember trails and a swirling portal shader.
   True bloom post-processing runs in flat preview; XR uses the halo pipeline at full frame rate.

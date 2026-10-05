@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import type { GameState } from './state';
+import type { SkyUniforms } from './glow';
 
 /**
  * AmbientDirector — the "Lumen" system. The whole environment is an instrument:
@@ -20,7 +21,7 @@ interface Channel {
 }
 
 const EVENTS: Record<AmbientEvent, { boost: number; decay: number; color: string; fog: string }> = {
-  nova:      { boost: 1.0, decay: 2.2,  color: '#ffb347', fog: '#2b1c08' },
+  nova:      { boost: 0.8, decay: 2.2,  color: '#ffb347', fog: '#2b1c08' },
   explode:   { boost: 0.45, decay: 3.5, color: '#ffb347', fog: '#241708' },
   barrier:   { boost: 0.7, decay: 1.6,  color: '#6fd8ff', fog: '#08202e' },
   chain:     { boost: 0.8, decay: 3.0,  color: '#cfeaff', fog: '#0d2333' },
@@ -43,7 +44,8 @@ export class AmbientDirector {
   private portalLight: THREE.PointLight;
   private accentLight: THREE.PointLight;
   private fog: THREE.FogExp2;
-  private sky: { top: { value: THREE.Color }; bottom: { value: THREE.Color }; horizon: { value: THREE.Color } };
+  private sky: SkyUniforms;
+  private portalSurge: { value: number } | null;
   private baseFog = new THREE.Color('#05060d');
   private baseHemiSky = new THREE.Color('#8a7fd0');
   private baseHemiGround = new THREE.Color('#1a1430');
@@ -67,7 +69,8 @@ export class AmbientDirector {
   constructor(
     scene: THREE.Scene,
     lights: { hemi: THREE.HemisphereLight; coreLight: THREE.PointLight; portalLight: THREE.PointLight; accentLight: THREE.PointLight },
-    sky: { top: { value: THREE.Color }; bottom: { value: THREE.Color }; horizon: { value: THREE.Color } },
+    sky: SkyUniforms,
+    portalSurge?: { value: number },
   ) {
     this.fog = scene.fog as THREE.FogExp2;
     this.hemi = lights.hemi;
@@ -75,6 +78,7 @@ export class AmbientDirector {
     this.portalLight = lights.portalLight;
     this.accentLight = lights.accentLight;
     this.sky = sky;
+    this.portalSurge = portalSurge ?? null;
     for (const event of Object.keys(EVENTS) as AmbientEvent[]) {
       const spec = EVENTS[event];
       this.channels.push({
@@ -87,6 +91,14 @@ export class AmbientDirector {
   fire(event: AmbientEvent): void {
     const c = this.channels.find((x) => x.event === event);
     if (c) c.ch.value = Math.min(1, c.ch.value + c.ch.boost);
+    // the portal whirls up when the storm acts
+    if (this.portalSurge) {
+      const surge = event === 'waveStart' || event === 'colossus' ? 0.55
+        : event === 'explode' ? 0.18
+        : event === 'nova' ? 0.3
+        : event === 'start' ? 0.4 : 0;
+      this.portalSurge.value = Math.min(1, this.portalSurge.value + surge);
+    }
   }
 
   private palette(t: number) {
@@ -149,6 +161,10 @@ export class AmbientDirector {
     this.sky.top.value.copy(pal.top).lerp(tint, Math.min(0.22, sum * 0.18));
     this.sky.bottom.value.copy(pal.fog).multiplyScalar(0.35);
     this.sky.horizon.value.copy(pal.horizon).lerp(tint, Math.min(0.45, sum * 0.35));
+    this.sky.uTime.value = s.time;
+    this.sky.uGlow.value = Math.min(2, sum);
+    this.sky.uStorm.value = this.danger;
+    if (this.portalSurge) this.portalSurge.value = Math.max(0, this.portalSurge.value - dt * 1.3);
 
     // lights
     this.coreLight.intensity = 2.2 + sum * 1.6 + (s.phase === 'gameover' ? 0 : 0);

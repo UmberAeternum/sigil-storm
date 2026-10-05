@@ -5,7 +5,7 @@ import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPa
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import { CFG, COL, createState, resetRun, saveBest, type GameState, type RuneName } from './game/state';
 import { buildArena, type Arena } from './game/arena';
-import { Particles, Shockwaves, Lightning } from './game/fx';
+import { Particles, Shockwaves, Lightning, RuneRings } from './game/fx';
 import { GameAudio } from './game/audio';
 import { Enemies } from './game/enemies';
 import { Orbs } from './game/projectiles';
@@ -53,7 +53,8 @@ const arena: Arena = buildArena(scene, envMap);
 const particles = new Particles(scene);
 const shockwaves = new Shockwaves(scene);
 const lightning = new Lightning(scene);
-const ambient = new AmbientDirector(scene, arena.lights, arena.skyUniforms);
+const runeRings = new RuneRings(scene);
+const ambient = new AmbientDirector(scene, arena.lights, arena.skyUniforms, arena.portalSurge);
 const meta = new Meta();
 const menuOrbs = new MenuOrbs(scene);
 const panel = new MetaPanel(scene);
@@ -79,7 +80,7 @@ function applyTheme(): void {
 }
 
 // ── enemies / orbs / spells ────────────────────────────────────────────────
-const enemies = new Enemies(scene, envMap, particles, {
+const enemies = new Enemies(scene, envMap, particles, shockwaves, {
   onDeath: (e, reactionMs) => {
     audio.enemyDie(e.kind === 'colossus' ? 0.6 : e.kind === 'brute' ? 0.8 : 1);
     state.shake = Math.min(1, state.shake + (e.kind === 'colossus' ? 0.6 : 0.12));
@@ -120,7 +121,7 @@ const orbs = new Orbs(scene, arena.rackAnchors, enemies, particles, shockwaves, 
 
 const spells = new Spells(scene, enemies, particles, shockwaves, lightning, audio, (a) => {
   state.shake = Math.min(1, state.shake + a);
-});
+}, runeRings);
 
 // ── tutorial ───────────────────────────────────────────────────────────────
 const TUTORIAL_STEPS = [
@@ -655,6 +656,7 @@ renderer.setAnimationLoop(() => {
     hud.setVignette(state.slowTimer > 0);
     particles.update(dt);
     shockwaves.update(dt);
+    runeRings.update(dt);
     lightning.update(dt);
     scorePops.update(dt);
     ambient.update(dt, state, state.slowTimer > 0);
@@ -666,7 +668,7 @@ renderer.setAnimationLoop(() => {
     if (state.phase === 'menu') menuOrbs.update(state.time, openPage);
   }
 
-  arena.update(state.time, state.slowTimer > 0);
+  arena.update(state.time, state.slowTimer > 0, Math.max(0, state.coreHp / CFG.coreHpMax));
   if (renderer.xr.isPresenting) {
     renderer.render(scene, camera);
   } else {

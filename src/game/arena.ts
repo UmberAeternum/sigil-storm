@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { CFG, COL } from './state';
 import {
   fresnelShell, makeHalo, portalSwirlMaterial, moodSky, runeCircleTexture, tickFresnel, softGlowTexture,
+  plasmaMaterial, beamMaterial, type SkyUniforms,
 } from './glow';
 
 export interface Arena {
@@ -11,12 +12,13 @@ export interface Arena {
   hpRing: THREE.Mesh;
   portal: THREE.Group;
   portalMat: THREE.ShaderMaterial;
+  portalSurge: { value: number };
   rackAnchors: THREE.Vector3[];
   startOrb: THREE.Mesh;
   restartOrb: THREE.Mesh;
   runes: THREE.Mesh;
   rim: THREE.Mesh;
-  skyUniforms: { top: { value: THREE.Color }; bottom: { value: THREE.Color }; horizon: { value: THREE.Color } };
+  skyUniforms: SkyUniforms;
   lights: {
     hemi: THREE.HemisphereLight;
     coreLight: THREE.PointLight;
@@ -24,14 +26,14 @@ export interface Arena {
     accentLight: THREE.PointLight;
   };
   fresnels: THREE.Mesh[];
-  update(t: number, slowActive: boolean): void;
+  update(t: number, slowActive: boolean, hpFrac?: number): void;
 }
 
 export function buildArena(scene: THREE.Scene, envMap: THREE.Texture): Arena {
   const world = new THREE.Group(); // shaken for impact juice
   scene.add(world);
 
-  // ── mood sky dome ──────────────────────────────────────────────────────────
+  // ── mood sky dome (nebula + twin starfields, driven by the director) ──────
   const sky = moodSky();
   world.add(sky.mesh);
 
@@ -57,7 +59,7 @@ export function buildArena(scene: THREE.Scene, envMap: THREE.Texture): Arena {
   world.add(stars);
 
   const dustGeo = new THREE.BufferGeometry();
-  const dustN = 140;
+  const dustN = 220;
   const dustPos = new Float32Array(dustN * 3);
   for (let i = 0; i < dustN; i++) {
     dustPos[i * 3] = (Math.random() - 0.5) * 3.4;
@@ -85,7 +87,7 @@ export function buildArena(scene: THREE.Scene, envMap: THREE.Texture): Arena {
   const runes = new THREE.Mesh(
     new THREE.RingGeometry(1.05, 1.62, 48),
     new THREE.MeshBasicMaterial({
-      map: runeCircleTexture(), transparent: true, opacity: 0.85,
+      map: runeCircleTexture(), color: 0x9682ff, transparent: true, opacity: 0.85,
       blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide,
     }),
   );
@@ -93,7 +95,19 @@ export function buildArena(scene: THREE.Scene, envMap: THREE.Texture): Arena {
   runes.position.set(0, -0.055, -0.4);
   world.add(runes);
 
-  // ── the core crystal: faceted PBR cluster + fresnel shell + halo ──────────
+  // ── under-island halo: the altar floats on a slow magic circle ────────────
+  const underHalo = new THREE.Mesh(
+    new THREE.PlaneGeometry(7.4, 7.4),
+    new THREE.MeshBasicMaterial({
+      map: runeCircleTexture(), color: 0x4a3f8f, transparent: true, opacity: 0.14,
+      blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide,
+    }),
+  );
+  underHalo.rotation.x = -Math.PI / 2;
+  underHalo.position.set(0, -1.15, -0.4);
+  world.add(underHalo);
+
+  // ── the core crystal: faceted shell over living plasma + orbit motes ──────
   const core = new THREE.Group();
   core.position.copy(CFG.corePos);
   world.add(core);
@@ -105,10 +119,15 @@ export function buildArena(scene: THREE.Scene, envMap: THREE.Texture): Arena {
       envMap, envMapIntensity: 2.4,
       clearcoat: 1, clearcoatRoughness: 0.08,
       emissive: COL.core, emissiveIntensity: 1.2,
+      transparent: true, opacity: 0.72,
     }),
   );
   coreCrystal.scale.y = 1.75;
   core.add(coreCrystal);
+  const corePlasmaMat = plasmaMaterial(new THREE.Color('#4fb0ff'), new THREE.Color('#d9f6ff'));
+  const corePlasma = new THREE.Mesh(new THREE.OctahedronGeometry(0.115), corePlasmaMat);
+  corePlasma.scale.y = 1.75;
+  core.add(corePlasma);
   const coreShell = fresnelShell(crystalGeo, COL.core, { power: 2.0, intensity: 2.2, scale: 1.5 });
   coreShell.scale.y = 1.75 * 1.5;
   core.add(coreShell);
@@ -116,6 +135,25 @@ export function buildArena(scene: THREE.Scene, envMap: THREE.Texture): Arena {
   core.add(coreHalo);
   const coreLight = new THREE.PointLight(COL.core, 2.4, 6);
   core.add(coreLight);
+
+  // two crossed light shafts rising from the pedestal
+  const shaftMat = beamMaterial(COL.core.clone());
+  shaftMat.uniforms.uOpacity.value = 0.3;
+  const shaftGeo = new THREE.PlaneGeometry(0.5, 1.7);
+  const shaftA = new THREE.Mesh(shaftGeo, shaftMat);
+  shaftA.position.y = -0.1;
+  const shaftB = new THREE.Mesh(shaftGeo, shaftMat);
+  shaftB.position.y = -0.1;
+  shaftB.rotation.y = Math.PI / 2;
+  core.add(shaftA, shaftB);
+
+  // three motes orbiting the crystal on tilted rings
+  const motes: THREE.Sprite[] = [];
+  for (let i = 0; i < 3; i++) {
+    const m = makeHalo(i === 1 ? COL.nova : COL.core, 0.07, 0.9);
+    core.add(m);
+    motes.push(m);
+  }
 
   const hpRing = new THREE.Mesh(
     new THREE.TorusGeometry(0.3, 0.016, 8, 48),
@@ -132,7 +170,7 @@ export function buildArena(scene: THREE.Scene, envMap: THREE.Texture): Arena {
   pedestal.position.y = -0.33;
   core.add(pedestal);
 
-  // ── spawn portal: shader swirl + fresnel rings ────────────────────────────
+  // ── spawn portal: layered vortex + corona + fresnel rings ─────────────────
   const portal = new THREE.Group();
   portal.position.copy(CFG.portalPos);
   portal.lookAt(CFG.corePos.x, CFG.portalPos.y, CFG.corePos.z);
@@ -140,6 +178,10 @@ export function buildArena(scene: THREE.Scene, envMap: THREE.Texture): Arena {
   const portalMat = portalSwirlMaterial(new THREE.Color('#ff5470'), new THREE.Color('#b36bff'));
   const portalDisc = new THREE.Mesh(new THREE.CircleGeometry(0.8, 48), portalMat);
   portal.add(portalDisc);
+  const coronaMat = portalSwirlMaterial(new THREE.Color('#7a2246'), new THREE.Color('#4a2a7f'));
+  const portalCorona = new THREE.Mesh(new THREE.CircleGeometry(1.25, 48), coronaMat);
+  portalCorona.position.z = -0.02;
+  portal.add(portalCorona);
   const ringGeo = new THREE.TorusGeometry(0.85, 0.045, 12, 64);
   const ring1 = new THREE.Mesh(ringGeo, new THREE.MeshStandardMaterial({
     color: 0x3a1030, roughness: 0.25, metalness: 0.85, envMap, envMapIntensity: 1.4,
@@ -199,16 +241,34 @@ export function buildArena(scene: THREE.Scene, envMap: THREE.Texture): Arena {
 
   const fresnels = [coreShell];
 
-  const update = (t: number, slowActive: boolean): void => {
+  const update = (t: number, slowActive: boolean, hpFrac = 1): void => {
     coreCrystal.rotation.y = t * 0.8;
     coreCrystal.rotation.x = Math.sin(t * 0.6) * 0.2;
     const pulse = 1 + Math.sin(t * 3) * 0.06;
     coreCrystal.scale.set(pulse, 1.75 * pulse, pulse);
-    coreHalo.material.opacity = 0.32 + Math.abs(Math.sin(t * 2.4)) * 0.16;
+    corePlasma.rotation.y = -t * 1.3;
+    corePlasmaMat.uniforms.uTime.value = t;
+    corePlasmaMat.uniforms.uBoost.value = 0.55 + 0.45 * hpFrac;
+    corePlasma.scale.set(pulse, 1.75 * pulse, pulse);
+    coreHalo.material.opacity = (0.32 + Math.abs(Math.sin(t * 2.4)) * 0.16) * (0.5 + 0.5 * hpFrac);
+    coreLight.intensity = 2.4 * (0.55 + 0.45 * hpFrac);
+    shaftMat.uniforms.uTime.value = t;
+    shaftMat.uniforms.uOpacity.value = 0.12 + 0.22 * hpFrac + Math.sin(t * 1.7) * 0.04;
+    shaftA.rotation.y = t * 0.35;
+    shaftB.rotation.y = t * 0.35 + Math.PI / 2;
+    for (let i = 0; i < motes.length; i++) {
+      const a = t * (0.9 + i * 0.35) + i * 2.1;
+      const r = 0.26 + i * 0.05;
+      motes[i].position.set(Math.cos(a) * r, Math.sin(a * 1.3) * 0.12, Math.sin(a) * r * 0.6);
+    }
     ring1.rotation.z = t * 0.55;
     ring1.rotation.y = Math.sin(t * 0.4) * 0.15;
     ring2.rotation.z = -t * 0.9;
     portalMat.uniforms.uTime.value = t;
+    coronaMat.uniforms.uTime.value = -t * 0.8;
+    coronaMat.uniforms.uSurge.value = portalMat.uniforms.uSurge.value;
+    portalCorona.scale.setScalar(1 + portalMat.uniforms.uSurge.value * 0.08);
+    underHalo.rotation.z = t * 0.05;
     dust.rotation.y = t * 0.012;
     stars.rotation.y = t * 0.004;
     startOrb.position.y = 0.9 + Math.sin(t * 2.2) * 0.02;
@@ -220,8 +280,10 @@ export function buildArena(scene: THREE.Scene, envMap: THREE.Texture): Arena {
   };
 
   return {
-    world, core, coreCrystal, hpRing, portal, portalMat, rackAnchors,
-    startOrb, restartOrb, runes, rim: runes, skyUniforms: sky.uniforms,
+    world, core, coreCrystal, hpRing, portal, portalMat,
+    portalSurge: portalMat.uniforms.uSurge as { value: number },
+    rackAnchors, startOrb, restartOrb, runes, rim: runes,
+    skyUniforms: sky.uniforms,
     lights: { hemi, coreLight, portalLight, accentLight },
     fresnels, update,
   };

@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { CFG, COL, type GameState } from './state';
-import type { Particles } from './fx';
+import type { Particles, Shockwaves } from './fx';
 import { fresnelShell, makeHalo, tickFresnel } from './glow';
 
 export type EnemyKind = 'wisp' | 'brute' | 'colossus';
@@ -16,7 +16,9 @@ export interface Enemy {
   mesh: THREE.Mesh;
   phase: number;
   slowTint: number;
+  trailT: number;
   threatSince: number;   // s.time when it entered the threat ring (reaction metric)
+  aura: THREE.Mesh | null;
 }
 
 interface Callbacks {
@@ -41,7 +43,7 @@ export class Enemies {
   private readonly fresnels: THREE.Mesh[] = [];
   private readonly tmp = new THREE.Vector3();
 
-  constructor(scene: THREE.Scene, envMap: THREE.Texture, private particles: Particles, private cbs: Callbacks) {
+  constructor(scene: THREE.Scene, envMap: THREE.Texture, private particles: Particles, private shockwaves: Shockwaves, private cbs: Callbacks) {
     const geos: Record<EnemyKind, THREE.BufferGeometry> = {
       wisp: new THREE.OctahedronGeometry(0.13),
       brute: new THREE.DodecahedronGeometry(0.22),
@@ -62,9 +64,22 @@ export class Enemies {
       mesh.add(makeHalo(spec.color, spec.radius * 6, 0.35));
       scene.add(mesh);
       this.fresnels.push(shell);
+      let aura: THREE.Mesh | null = null;
+      if (kind === 'colossus') {
+        aura = new THREE.Mesh(
+          new THREE.TorusGeometry(0.62, 0.013, 8, 40),
+          new THREE.MeshBasicMaterial({
+            color: COL.colossus, transparent: true, opacity: 0.5,
+            blending: THREE.AdditiveBlending, depthWrite: false,
+          }),
+        );
+        aura.rotation.x = Math.PI / 2.4;
+        mesh.add(aura);
+      }
       this.pool.push({
         active: false, kind, hp: spec.hp, radius: spec.radius, speed: 1,
-        damage: spec.damage, score: spec.score, mesh, phase: 0, slowTint: 0, threatSince: 0,
+        damage: spec.damage, score: spec.score, mesh, phase: 0, slowTint: 0, trailT: 0, threatSince: 0,
+        aura,
       });
     }
   }
@@ -95,6 +110,10 @@ export class Enemies {
     e.mesh.position.y += (Math.random() - 0.5) * 0.7;
     e.mesh.visible = true;
     e.mesh.scale.setScalar(0.2);
+    // materialization flash at the portal mouth
+    this.particles.implosion(e.mesh.position, e.kind === 'colossus' ? 26 : 10, spec.color, 1.8, 0.4);
+    this.particles.burst(e.mesh.position, 10, spec.color, 1.2, 0.35);
+    this.shockwaves.pulse(e.mesh.position, spec.color, e.kind === 'colossus' ? 1.2 : 0.55, 0.4);
   }
 
   /** Wave machine + movement + collisions with the core/barrier. */
@@ -159,6 +178,16 @@ export class Enemies {
       e.mesh.position.z += pz * weave * enemyDt;
       e.mesh.rotation.x += enemyDt * 1.4;
       e.mesh.rotation.y += enemyDt * 0.9;
+      // comet trail (throttled per enemy)
+      e.trailT -= dt;
+      if (e.trailT <= 0) {
+        e.trailT = 0.055;
+        this.particles.burst(e.mesh.position, 1, KIND_SPEC[e.kind].color, 0.12, 0.32);
+      }
+      if (e.aura) {
+        e.aura.rotation.z += enemyDt * 1.1;
+        e.aura.rotation.x = Math.PI / 2.4 + Math.sin(s.time * 0.9) * 0.18;
+      }
       // spawn pop-in
       if (e.mesh.scale.x < 1) e.mesh.scale.setScalar(Math.min(1, e.mesh.scale.x + enemyDt * 2.4));
       // bullet-time tint
@@ -189,7 +218,10 @@ export class Enemies {
   private kill(e: Enemy, scored: boolean, s?: GameState): void {
     e.active = false;
     e.mesh.visible = false;
+    // implode, then burst outward + ring
+    this.particles.implosion(e.mesh.position, e.kind === 'colossus' ? 46 : e.kind === 'brute' ? 24 : 14, KIND_SPEC[e.kind].color, 2.4, 0.35);
     this.particles.burst(e.mesh.position, e.kind === 'colossus' ? 60 : e.kind === 'brute' ? 30 : 18, KIND_SPEC[e.kind].color, e.kind === 'colossus' ? 3.2 : 2.2, 0.7);
+    this.shockwaves.pulse(e.mesh.position, KIND_SPEC[e.kind].color, e.kind === 'colossus' ? 1.9 : e.kind === 'brute' ? 1.1 : 0.7, 0.45);
     if (scored && s) {
       s.combo = s.comboTimer > 0 ? s.combo + 1 : 1;
       s.comboTimer = 3.5;
