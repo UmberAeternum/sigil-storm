@@ -3,3 +3,4 @@ dist/
 .mimosa/
 *.local
 .DS_Store
+github-pages-upload/  
