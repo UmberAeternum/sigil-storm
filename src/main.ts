@@ -103,6 +103,8 @@ const enemies = new Enemies(scene, envMap, particles, shockwaves, {
   onReachCore: (e) => {
     state.coreHp -= e.damage;
     state.waveCoreDmg += e.damage;
+    state.coreCalm = 0;
+    state.regenAcc = 0;
     state.combo = 0;
     state.comboTimer = 0;
     state.shake = Math.min(1, state.shake + 0.5);
@@ -596,6 +598,19 @@ renderer.setAnimationLoop(() => {
       if (state.cooldowns[k] > 0) state.cooldowns[k] = Math.max(0, state.cooldowns[k] - dt);
     }
     if (state.slowTimer > 0) state.slowTimer = Math.max(0, state.slowTimer - dt);
+    // the core mends itself when the player gets a breath: no hits for a while → +1 HP
+    if (state.phase === 'playing') {
+      state.coreCalm = Math.min(60, state.coreCalm + dt);
+      const hpMax = meta.data.settings.calm ? CFG.coreHpCalm : CFG.coreHpMax;
+      if (state.coreHp < hpMax && state.coreCalm >= CFG.coreRegenDelay) {
+        state.regenAcc += dt;
+        if (state.regenAcc >= CFG.coreRegenEvery) {
+          state.regenAcc -= CFG.coreRegenEvery;
+          state.coreHp += 1;
+          particles.burstUp(CFG.corePos, 12, COL.runeOk, 1.3, 0.55);
+        }
+      }
+    }
     if (state.comboTimer > 0) {
       state.comboTimer -= dt;
       if (state.comboTimer <= 0) state.combo = 0;

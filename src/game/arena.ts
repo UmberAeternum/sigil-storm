@@ -195,17 +195,21 @@ export function buildArena(scene: THREE.Scene, envMap: THREE.Texture): Arena {
   portalLight.position.copy(CFG.portalPos);
   world.add(portalLight);
 
-  // ── ember field: scattered "bubble homes" + faint nesting rings ───────────
+  // ── ember field: 9 bubbles scattered all around the view ──────────────────
+  // sunflower spread adapts to the viewport: portrait phones get a tall
+  // column of bubbles, landscape/VR get a wide dome — all within reach.
   const rackAnchors: THREE.Vector3[] = [];
   const anchorGeo = new THREE.TorusGeometry(0.062, 0.008, 8, 24);
+  const aspect = window.innerWidth / Math.max(1, window.innerHeight);
+  const xHalf = Math.min(0.55, Math.tan(THREE.MathUtils.degToRad(35)) * aspect * 1.25 * 0.85);
+  const golden = Math.PI * (3 - Math.sqrt(5));
   for (let i = 0; i < CFG.rackCount; i++) {
-    const base = ((-CFG.rackSpreadDeg / 2) + (CFG.rackSpreadDeg * i) / (CFG.rackCount - 1)) * (Math.PI / 180);
-    const a = base + (Math.random() - 0.5) * 0.42;
-    const r = CFG.rackRadius * (0.85 + Math.random() * 0.35);
+    const rr = Math.sqrt((i + 0.5) / CFG.rackCount);
+    const ang = i * golden + (Math.random() - 0.5) * 0.4;
     const p = new THREE.Vector3(
-      Math.sin(a) * r,
-      CFG.rackHeight + (Math.random() - 0.5) * 0.3,
-      -Math.cos(a) * r - Math.random() * 0.12,
+      Math.cos(ang) * rr * xHalf,
+      1.02 + Math.sin(ang) * rr * 0.34 + (Math.random() - 0.5) * 0.06,
+      -0.12 - rr * 0.3 - Math.random() * 0.08,
     );
     rackAnchors.push(p);
     const anchor = new THREE.Mesh(anchorGeo, new THREE.MeshBasicMaterial({

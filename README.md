@@ -85,8 +85,10 @@ The build is a static bundle with relative paths — it works on any static host
 
 - **Hands-first end-to-end**: every interaction — menu, combat, restart — is a pinch, throw,
   stroke or fist. A controller is never required.
-- **Seated-optimized**: the rack sits at 0.9 m within ~0.42 m; enemies come to you; the
-  airplane-seat test passes by construction.
+- **Seated-optimized**: nine ember bubbles float all around the view (the spread adapts to
+  portrait phones), enemies come to you, and the airplane-seat test passes by construction.
+- **Never a dead end**: leave the core alone for five seconds and it starts mending itself
+  (+1 HP every 4 s), so a slow reaction costs time, not the run.
 - **One bus stop test**: a full wave arc takes ~90 s; the core loop is satisfying in the
   first 30 seconds.
 - **Take-it-away test**: no third-party service exists to remove — engine, art, audio and
@@ -102,8 +104,7 @@ The build is a static bundle with relative paths — it works on any static host
 - **Medals** — 10 achievements with live toasts (Trinity Break, Rune Master, Sharpshot…).
 - **Hall of Storms** — local top-5 leaderboard.
 - **Adaptive difficulty** — perfect waves raise the storm (+8%), rough waves ease it (−10%),
-  so players always sit in their flow zone. Calm Mode removes fail state for younger players.
-- **Guided tutorial** — five hands-on steps (grab → throw → line → circle → fist) with auto-advance.
+  so players always sit in their flow zone. Calm Mode removes fail state for younger players.- **Guided tutorial** — five hands-on steps (grab → throw → line → circle → fist) with auto-advance.
 - **Game feel** — hit-stop on kills, floating score pops, combo callouts, adaptive music pulse,
   Colossus weak-point bonus.
 

@@ -11,9 +11,11 @@ export const CFG = {
   portalPos: new THREE.Vector3(0, 1.15, -6),
   rackRadius: 0.42,
   rackHeight: 0.92,
-  rackCount: 5,
+  rackCount: 9,
   rackSpreadDeg: 96,
   orbRegenSec: 1.6,
+  coreRegenDelay: 5,   // s without a core hit before the core starts mending
+  coreRegenEvery: 4,   // s per +1 HP while mending
   orbSpeedMax: 11,
   orbThrowBoost: 1.5,
   orbAoe: 0.6,
@@ -79,6 +81,8 @@ export interface GameState {
   spawnTimer: number;
   waveCoreDmg: number;
   coreHp: number;
+  coreCalm: number;         // s since the core was last hit (mending gate)
+  regenAcc: number;         // accumulator for core mending
   cooldowns: Cooldowns;
   slowTimer: number;
   time: number;
@@ -118,6 +122,8 @@ export function createState(): GameState {
     spawnTimer: 0,
     waveCoreDmg: 0,
     coreHp: CFG.coreHpMax,
+    coreCalm: 0,
+    regenAcc: 0,
     cooldowns: { barrier: 0, nova: 0, chain: 0, slow: 0 },
     slowTimer: 0,
     time: 0,
@@ -150,6 +156,8 @@ export function resetRun(s: GameState, calm: boolean): void {
   s.spawnLeft = 0;
   s.waveCoreDmg = 0;
   s.coreHp = calm ? CFG.coreHpCalm : CFG.coreHpMax;
+  s.coreCalm = 0;
+  s.regenAcc = 0;
   s.cooldowns = { barrier: 0, nova: 0, chain: 0, slow: 0 };
   s.slowTimer = 0;
   s.hitStop = 0;
