@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { gsap } from 'gsap';
 import { CFG, COL, type GameState } from './state';
 import type { Particles, Shockwaves } from './fx';
 import { fresnelShell, makeHalo, tickFresnel } from './glow';
@@ -17,8 +18,10 @@ export interface Enemy {
   phase: number;
   slowTint: number;
   trailT: number;
-  threatSince: number;   // s.time when it entered the threat ring (reaction metric)
+  flash: number;          // 1→0 hit flash, drives emissive punch
+  threatSince: number;    // s.time when it entered the threat ring (reaction metric)
   aura: THREE.Mesh | null;
+  deathTween: gsap.core.Timeline | null;
 }
 
 interface Callbacks {
@@ -78,8 +81,8 @@ export class Enemies {
       }
       this.pool.push({
         active: false, kind, hp: spec.hp, radius: spec.radius, speed: 1,
-        damage: spec.damage, score: spec.score, mesh, phase: 0, slowTint: 0, trailT: 0, threatSince: 0,
-        aura,
+        damage: spec.damage, score: spec.score, mesh, phase: 0, slowTint: 0, trailT: 0,
+        flash: 0, threatSince: 0, aura, deathTween: null,
       });
     }
   }
@@ -109,7 +112,12 @@ export class Enemies {
     e.mesh.position.x += (Math.random() - 0.5) * 1.4;
     e.mesh.position.y += (Math.random() - 0.5) * 0.7;
     e.mesh.visible = true;
-    e.mesh.scale.setScalar(0.2);
+    // materialize: elastic overshoot pop from the portal flash
+    e.deathTween?.kill();
+    e.deathTween = null;
+    gsap.killTweensOf(e.mesh.scale);
+    e.mesh.scale.setScalar(0.05);
+    gsap.to(e.mesh.scale, { x: 1, y: 1, z: 1, duration: 0.55, ease: 'back.out(2.4)', overwrite: true });
     // materialization flash at the portal mouth
     this.particles.implosion(e.mesh.position, e.kind === 'colossus' ? 26 : 10, spec.color, 1.8, 0.4);
     this.particles.burst(e.mesh.position, 10, spec.color, 1.2, 0.35);
@@ -188,13 +196,13 @@ export class Enemies {
         e.aura.rotation.z += enemyDt * 1.1;
         e.aura.rotation.x = Math.PI / 2.4 + Math.sin(s.time * 0.9) * 0.18;
       }
-      // spawn pop-in
-      if (e.mesh.scale.x < 1) e.mesh.scale.setScalar(Math.min(1, e.mesh.scale.x + enemyDt * 2.4));
-      // bullet-time tint
+      // spawn pop-in now runs as a GSAP overshoot (no per-frame writes)
+      // bullet-time tint + hit flash drive the emissive
       const targetTint = s.slowTimer > 0 ? 1 : 0;
       e.slowTint += (targetTint - e.slowTint) * Math.min(1, dt * 6);
+      e.flash = Math.max(0, e.flash - dt * 4);
       const mat = e.mesh.material as THREE.MeshStandardMaterial;
-      mat.emissiveIntensity = 0.5 + e.slowTint * 0.8;
+      mat.emissiveIntensity = 0.5 + e.slowTint * 0.8 + e.flash * 2.6;
     }
     // shimmer the fresnel shells
     for (let i = 0; i < this.fresnels.length; i++) {
@@ -205,6 +213,8 @@ export class Enemies {
   damage(e: Enemy, amount: number, s: GameState, knockFrom?: THREE.Vector3): void {
     if (!e.active) return;
     e.hp -= amount;
+    // hit flash: white-hot emissive punch that decays
+    e.flash = 1;
     if (knockFrom) {
       this.tmp.copy(e.mesh.position).sub(knockFrom);
       if (this.tmp.lengthSq() > 1e-6) {
@@ -217,7 +227,16 @@ export class Enemies {
 
   private kill(e: Enemy, scored: boolean, s?: GameState): void {
     e.active = false;
-    e.mesh.visible = false;
+    // death crunch: squash with anticipation, then implode with overshoot
+    gsap.killTweensOf(e.mesh.scale);
+    const crunch = gsap.timeline({
+      onComplete: () => { e.mesh.visible = false; e.deathTween = null; },
+    });
+    crunch
+      .to(e.mesh.scale, { x: 1.4, y: 0.55, z: 1.4, duration: 0.07, ease: 'power3.out' })
+      .to(e.mesh.scale, { x: 0.02, y: 1.5, z: 0.02, duration: 0.16, ease: 'back.in(1.8)' })
+      .to(e.mesh.rotation, { x: e.mesh.rotation.x + 2.2, y: e.mesh.rotation.y + 3.1, duration: 0.23, ease: 'power2.in' }, 0);
+    e.deathTween = crunch;
     // implode, then burst outward + ring
     this.particles.implosion(e.mesh.position, e.kind === 'colossus' ? 46 : e.kind === 'brute' ? 24 : 14, KIND_SPEC[e.kind].color, 2.4, 0.35);
     this.particles.burst(e.mesh.position, e.kind === 'colossus' ? 60 : e.kind === 'brute' ? 30 : 18, KIND_SPEC[e.kind].color, e.kind === 'colossus' ? 3.2 : 2.2, 0.7);

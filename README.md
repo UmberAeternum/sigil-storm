@@ -106,7 +106,9 @@ The build is a static bundle with relative paths — it works on any static host
 - **Adaptive difficulty** — perfect waves raise the storm (+8%), rough waves ease it (−10%),
   so players always sit in their flow zone. Calm Mode removes fail state for younger players.- **Guided tutorial** — five hands-on steps (grab → throw → line → circle → fist) with auto-advance.
 - **Game feel** — hit-stop on kills, floating score pops, combo callouts, adaptive music pulse,
-  Colossus weak-point bonus.
+  Colossus weak-point bonus. Every discrete moment is GSAP-eased: enemies materialize with
+  overshoot and die in a squash-crunch, bubbles pop in elastically and breathe, the core crystal
+  takes an elastic punch on every hit and glows through its mend, novas snap with expo-out rings.
 
 ## The Growth Report (games that make you better)
 

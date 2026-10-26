@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { gsap } from 'gsap';
 import { CFG, COL, type GameState, type RuneName } from './state';
 import type { Enemies, Enemy } from './enemies';
 import type { Particles, Shockwaves, Lightning, RuneRings } from './fx';
@@ -75,7 +76,7 @@ export class Spells {
   private readonly barrierMesh: THREE.Mesh;
   private readonly barrierShell: THREE.Mesh;
   private readonly pillar: THREE.Mesh;
-  private pillarT = 1; // 1 = idle/done
+  private pillarTween: gsap.core.Timeline | null = null;
   private readonly visited = new Set<Enemy>();
 
   constructor(
@@ -140,6 +141,11 @@ export class Spells {
       this.audio.castOk();
       this.particles.burst(CFG.corePos, 30, COL.barrier, 1.6, 0.6);
       this.rings.ring(ground, COL.barrier, 1.6, 0.9, 1.8);
+      // shell snaps on with elastic overshoot
+      gsap.killTweensOf(this.barrierShell.scale);
+      gsap.fromTo(this.barrierShell.scale,
+        { x: 0.35, y: 0.35, z: 0.35 },
+        { x: 1, y: 1, z: 1, duration: 0.65, ease: 'elastic.out(1.2, 0.45)', overwrite: true });
       return true;
     }
     if (kind === 'circle') {
@@ -149,8 +155,17 @@ export class Spells {
       this.particles.burst(CFG.corePos, 36, COL.nova, 4.5, 0.7);
       this.particles.burstUp(ground, 30, COL.nova, 4.2, 0.85);
       this.rings.ring(ground, COL.nova, CFG.novaRadius * 0.85, 0.8, 2.6);
-      this.pillarT = 0;
+      // nova pillar: stretch up with overshoot, slam wide, sink into the dark
+      this.pillarTween?.kill();
+      const pmat = this.pillar.material as THREE.ShaderMaterial;
+      pmat.uniforms.uOpacity.value = 0.9;
       this.pillar.visible = true;
+      gsap.killTweensOf(this.pillar.scale);
+      this.pillar.scale.set(1, 0.55, 1);
+      this.pillarTween = gsap.timeline({ onComplete: () => { this.pillar.visible = false; } })
+        .to(this.pillar.scale, { y: 1.3, duration: 0.16, ease: 'back.out(2.2)' })
+        .to(this.pillar.scale, { x: 2.3, z: 2.3, duration: 0.55, ease: 'power2.out' }, 0.16)
+        .to(pmat.uniforms.uOpacity, { value: 0, duration: 0.71, ease: 'power2.in' }, 0);
       this.audio.castOk();
       this.shake(0.5);
       s.run.novas += 1;
@@ -205,22 +220,17 @@ export class Spells {
       mat.opacity = Math.max(0, mat.opacity - dt * 1.5);
       if (mat.opacity === 0) this.barrierShell.visible = false;
     }
-    // nova pillar: slam wide and fade
-    if (this.pillar.visible) {
-      this.pillarT = Math.min(1, this.pillarT + dt / 0.55);
-      const k = this.pillarT;
-      const pmat = this.pillar.material as THREE.ShaderMaterial;
-      pmat.uniforms.uTime.value = s.time;
-      pmat.uniforms.uOpacity.value = 0.85 * (1 - k) * (1 - k);
-      this.pillar.scale.set(1 + k * 1.6, 1, 1 + k * 1.6);
-      if (k >= 1) this.pillar.visible = false;
-    }
+    // nova pillar scale/opacity now run as a GSAP timeline
+    (this.pillar.material as THREE.ShaderMaterial).uniforms.uTime.value = s.time;
   }
 
   reset(): void {
     this.barrierCharges = 0;
     this.barrierTimer = 0;
-    this.pillarT = 1;
+    this.pillarTween?.kill();
+    this.pillarTween = null;
     this.pillar.visible = false;
+    gsap.killTweensOf(this.pillar.scale);
+    gsap.killTweensOf(this.barrierShell.scale);
   }
 }

@@ -110,6 +110,7 @@ const enemies = new Enemies(scene, envMap, particles, shockwaves, {
     state.shake = Math.min(1, state.shake + 0.5);
     audio.coreHit();
     ambient.fire('coreHit');
+    arena.coreHitPunch();
     if (state.coreHp <= 0) triggerGameOver();
   },
 });
@@ -608,6 +609,7 @@ renderer.setAnimationLoop(() => {
           state.regenAcc -= CFG.coreRegenEvery;
           state.coreHp += 1;
           particles.burstUp(CFG.corePos, 12, COL.runeOk, 1.3, 0.55);
+          arena.healPulse();
         }
       }
     }
@@ -673,7 +675,6 @@ renderer.setAnimationLoop(() => {
     shockwaves.update(dt);
     runeRings.update(dt);
     lightning.update(dt);
-    scorePops.update(dt);
     ambient.update(dt, state, state.slowTimer > 0);
     bloom.strength = ambient.bloomStrength;
     const musicOn = meta.data.settings.musicOn ? 1 : 0;

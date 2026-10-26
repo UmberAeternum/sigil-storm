@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { gsap } from 'gsap';
 import { CFG, COL } from './state';
 import {
   fresnelShell, makeHalo, portalSwirlMaterial, moodSky, runeCircleTexture, tickFresnel, softGlowTexture,
@@ -26,6 +27,8 @@ export interface Arena {
     accentLight: THREE.PointLight;
   };
   fresnels: THREE.Mesh[];
+  coreHitPunch(): void;
+  healPulse(): void;
   update(t: number, slowActive: boolean, hpFrac?: number): void;
 }
 
@@ -253,17 +256,35 @@ export function buildArena(scene: THREE.Scene, envMap: THREE.Texture): Arena {
 
   const fresnels = [coreShell];
 
+  // GSAP-driven juice factors consumed by the per-frame update
+  const punch = { v: 0 };    // core-hit squash factor
+  const healBoost = { v: 0 }; // mending glow factor
+
+  const coreHitPunch = (): void => {
+    gsap.killTweensOf(punch);
+    gsap.fromTo(punch, { v: 1 }, { v: 0, duration: 0.8, ease: 'elastic.out(1.4, 0.35)', overwrite: true });
+  };
+  const healPulse = (): void => {
+    gsap.killTweensOf(healBoost);
+    gsap.fromTo(healBoost, { v: 1 }, { v: 0, duration: 0.9, ease: 'power2.out', overwrite: true });
+  };
+
   const update = (t: number, slowActive: boolean, hpFrac = 1): void => {
     coreCrystal.rotation.y = t * 0.8;
     coreCrystal.rotation.x = Math.sin(t * 0.6) * 0.2;
     const pulse = 1 + Math.sin(t * 3) * 0.06;
-    coreCrystal.scale.set(pulse, 1.75 * pulse, pulse);
+    // hit punch squashes the crystal sideways; it springs back elastically
+    coreCrystal.scale.set(
+      pulse * (1 + punch.v * 0.42),
+      1.75 * pulse * (1 - punch.v * 0.38),
+      pulse * (1 + punch.v * 0.42),
+    );
     corePlasma.rotation.y = -t * 1.3;
     corePlasmaMat.uniforms.uTime.value = t;
-    corePlasmaMat.uniforms.uBoost.value = 0.55 + 0.45 * hpFrac;
+    corePlasmaMat.uniforms.uBoost.value = (0.55 + 0.45 * hpFrac) * (1 + healBoost.v * 0.9);
     corePlasma.scale.set(pulse, 1.75 * pulse, pulse);
-    coreHalo.material.opacity = (0.32 + Math.abs(Math.sin(t * 2.4)) * 0.16) * (0.5 + 0.5 * hpFrac);
-    coreLight.intensity = 2.4 * (0.55 + 0.45 * hpFrac);
+    coreHalo.material.opacity = ((0.32 + Math.abs(Math.sin(t * 2.4)) * 0.16) * (0.5 + 0.5 * hpFrac)) * (1 + healBoost.v * 1.3);
+    coreLight.intensity = 2.4 * (0.55 + 0.45 * hpFrac) + healBoost.v * 1.6;
     shaftMat.uniforms.uTime.value = t;
     shaftMat.uniforms.uOpacity.value = 0.12 + 0.22 * hpFrac + Math.sin(t * 1.7) * 0.04;
     shaftA.rotation.y = t * 0.35;
@@ -297,6 +318,6 @@ export function buildArena(scene: THREE.Scene, envMap: THREE.Texture): Arena {
     rackAnchors, startOrb, restartOrb, runes, rim: runes,
     skyUniforms: sky.uniforms,
     lights: { hemi, coreLight, portalLight, accentLight },
-    fresnels, update,
+    fresnels, coreHitPunch, healPulse, update,
   };
 }

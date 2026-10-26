@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { gsap } from 'gsap';
 import { CFG, COL, type GameState } from './state';
 import type { Particles, Shockwaves } from './fx';
 import type { Enemies } from './enemies';
@@ -71,7 +72,17 @@ export class Orbs {
     o.mesh.visible = true;
     o.mesh.position.copy(this.anchors[anchor]);
     o.vel.set(0, 0, 0);
+    // soap-bubble pop: elastic overshoot, then a slow breathing wobble
+    gsap.killTweensOf(o.mesh.scale);
     o.mesh.scale.setScalar(0.01);
+    gsap.to(o.mesh.scale, {
+      x: 1, y: 1, z: 1, duration: 0.75, ease: 'elastic.out(1, 0.48)', overwrite: true,
+      onComplete: () => {
+        gsap.to(o.mesh.scale, {
+          x: 1.05, y: 1.05, z: 1.05, duration: 1.4, yoyo: true, repeat: -1, ease: 'sine.inOut',
+        });
+      },
+    });
     this.particles.burst(this.anchors[anchor], 8, this.trailColor(), 0.35, 0.35);
   }
 
@@ -87,6 +98,11 @@ export class Orbs {
     if (best) {
       best.held = true;
       best.vel.set(0, 0, 0);
+      // grab feedback: squash-and-stretch recovery
+      gsap.killTweensOf(best.mesh.scale);
+      gsap.fromTo(best.mesh.scale,
+        { x: 1.3, y: 0.78, z: 1.3 },
+        { x: 1, y: 1, z: 1, duration: 0.4, ease: 'elastic.out(1.1, 0.45)', overwrite: true });
       this.audio.grab();
     }
     return best;
@@ -95,6 +111,12 @@ export class Orbs {
   release(o: Orb, velocity: THREE.Vector3, s?: GameState): void {
     o.held = false;
     o.thrown = true;
+    gsap.killTweensOf(o.mesh.scale);
+    o.mesh.scale.setScalar(1);
+    // stretch along the throw
+    gsap.fromTo(o.mesh.scale,
+      { x: 0.75, y: 1.35, z: 0.75 },
+      { x: 1, y: 1, z: 1, duration: 0.3, ease: 'elastic.out(1.2, 0.5)', overwrite: true });
     o.vel.copy(velocity).multiplyScalar(CFG.orbThrowBoost);
     if (o.vel.length() > CFG.orbSpeedMax) o.vel.setLength(CFG.orbSpeedMax);
     o.bornAt = performance.now() / 1000;
@@ -198,8 +220,7 @@ export class Orbs {
             o.mesh.position.z += dz * inv * push;
           }
         }
-        const s = Math.min(1, o.mesh.scale.x + dt * 4);
-        o.mesh.scale.setScalar(s >= 1 ? 1 + Math.sin(now * 2.8 + o.anchor * 1.7) * 0.035 : s);
+        // scale is owned by GSAP (pop-in + breathing) once placed
         continue;
       }
 

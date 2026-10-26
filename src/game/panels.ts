@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { gsap } from 'gsap';
 import { makeHalo } from './glow';
 import { makeTextSprite } from './fx';
 import { Meta, THEMES, TRAILS, ACHIEVEMENTS, RANKS } from './meta';
@@ -22,7 +23,7 @@ const ORB_DEFS: OrbDef[] = [
 ];
 
 export class MenuOrbs {
-  private readonly items: { def: OrbDef; mesh: THREE.Mesh; label: THREE.Sprite }[] = [];
+  private readonly items: { def: OrbDef; mesh: THREE.Mesh; label: THREE.Sprite; intro: { v: number } }[] = [];
   private readonly group = new THREE.Group();
 
   constructor(scene: THREE.Scene) {
@@ -39,16 +40,24 @@ export class MenuOrbs {
       label.scale.set(0.42, 0.13, 1);
       label.visible = false;
       this.group.add(label);
-      this.items.push({ def, mesh, label });
+      this.items.push({ def, mesh, label, intro: { v: 0 } });
     }
     scene.add(this.group);
   }
 
   setVisible(v: boolean): void {
-    for (const it of this.items) {
+    this.items.forEach((it, i) => {
       it.mesh.visible = v;
       it.label.visible = v;
-    }
+      gsap.killTweensOf(it.intro);
+      if (v) {
+        // staggered back.out entrance
+        it.intro.v = 0;
+        gsap.to(it.intro, { v: 1, duration: 0.6, delay: 0.05 + i * 0.07, ease: 'back.out(2.2)' });
+      } else {
+        it.intro.v = 0;
+      }
+    });
   }
 
   update(t: number, openPage: PageId): void {
@@ -60,7 +69,7 @@ export class MenuOrbs {
       it.label.position.copy(pos).add(new THREE.Vector3(0, -0.12, 0));
       const active = openPage === it.def.id;
       const pulse = active ? 1.35 + Math.sin(t * 6) * 0.12 : 1;
-      it.mesh.scale.setScalar(pulse);
+      it.mesh.scale.setScalar(Math.max(0.001, pulse * it.intro.v));
       (it.mesh.material as THREE.MeshStandardMaterial).emissiveIntensity = active ? 2.4 : 1.5;
     }
   }
@@ -219,9 +228,9 @@ export class MetaPanel {
   scorePops: THREE.Sprite[] = [];
 }
 
-/** Floating "+N" score pop pool. */
+/** Floating "+N" score pop pool — GSAP-driven: back.out pop, power2 rise, late fade. */
 export class ScorePops {
-  private pool: { sprite: THREE.Sprite; t: number; vel: number }[] = [];
+  private pool: THREE.Sprite[] = [];
 
   constructor(scene: THREE.Scene, count = 10) {
     for (let i = 0; i < count; i++) {
@@ -229,12 +238,12 @@ export class ScorePops {
       sprite.scale.set(0.6, 0.225, 1);
       sprite.visible = false;
       scene.add(sprite);
-      this.pool.push({ sprite, t: 0, vel: 0 });
+      this.pool.push(sprite);
     }
   }
 
   pop(pos: THREE.Vector3, text: string, color: string): void {
-    const slot = this.pool.find((p) => !p.sprite.visible) ?? this.pool[0];
+    const slot = this.pool.find((p) => !p.visible) ?? this.pool[0];
     const c = document.createElement('canvas');
     c.width = 256; c.height = 96;
     const g = c.getContext('2d')!;
@@ -245,25 +254,20 @@ export class ScorePops {
     g.shadowColor = color;
     g.shadowBlur = 16;
     g.fillText(text, 128, 48);
-    const mat = slot.sprite.material as THREE.SpriteMaterial;
+    const mat = slot.material as THREE.SpriteMaterial;
     mat.map?.dispose();
     mat.map = new THREE.CanvasTexture(c);
     mat.map.colorSpace = THREE.SRGBColorSpace;
-    slot.sprite.position.copy(pos);
-    slot.sprite.visible = true;
-    slot.t = 0;
-    slot.vel = 0.8;
-  }
-
-  update(dt: number): void {
-    for (const p of this.pool) {
-      if (!p.sprite.visible) continue;
-      p.t += dt;
-      p.sprite.position.y += p.vel * dt;
-      p.vel *= 1 - dt * 1.5;
-      (p.sprite.material as THREE.SpriteMaterial).opacity = Math.max(0, 1 - p.t / 0.9);
-      if (p.t > 0.9) p.sprite.visible = false;
-    }
+    mat.opacity = 1;
+    slot.position.copy(pos);
+    slot.visible = true;
+    gsap.killTweensOf([slot.scale, slot.position, mat]);
+    gsap.fromTo(slot.scale, { x: 0.25, y: 0.09 }, { x: 0.6, y: 0.225, duration: 0.4, ease: 'back.out(3.2)', overwrite: true });
+    gsap.to(slot.position, { y: pos.y + 0.38, duration: 0.95, ease: 'power2.out', overwrite: true });
+    gsap.to(mat, {
+      opacity: 0, duration: 0.38, delay: 0.57, ease: 'power1.in',
+      onComplete: () => { slot.visible = false; },
+    });
   }
 }
 

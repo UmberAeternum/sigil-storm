@@ -183,9 +183,10 @@ export class Shockwaves {
       w.t += dt;
       const k = w.t / w.dur;
       if (k >= 1) { w.mesh.visible = false; continue; }
-      const r = 0.08 + w.maxR * (1 - (1 - k) ** 2);
+      const e = 1 - Math.pow(2, -10 * k); // expo.out — fast launch, long settle
+      const r = 0.08 + w.maxR * e;
       w.mesh.scale.setScalar(r);
-      w.mat.opacity = 0.75 * (1 - k);
+      w.mat.opacity = 0.8 * Math.pow(1 - k, 1.7);
     }
   }
 }
@@ -320,10 +321,11 @@ export class RuneRings {
       r.t += dt;
       const k = r.t / r.dur;
       if (k >= 1) { r.mesh.visible = false; continue; }
-      const scale = 0.15 + r.maxR * (1 - (1 - k) ** 2);
-      r.mesh.scale.setScalar(scale);
-      r.mesh.rotation.z += dt * r.spin * (1 - k);
-      r.mat.opacity = 0.95 * (1 - k) * (0.4 + 0.6 * (1 - k));
+      const e = 1 - Math.pow(2, -10 * k); // expo.out snap
+      r.mesh.scale.setScalar(0.15 + r.maxR * e);
+      r.mesh.rotation.z += dt * r.spin * Math.pow(1 - k, 1.5);
+      // quick flare in, long luxurious fade out
+      r.mat.opacity = k < 0.12 ? 0.95 * (k / 0.12) : 0.95 * Math.pow(1 - (k - 0.12) / 0.88, 1.6);
     }
   }
 }
