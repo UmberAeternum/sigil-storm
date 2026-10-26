@@ -19,7 +19,10 @@ import { MenuOrbs, MetaPanel, ScorePops, type PageId } from './game/panels';
 
 // ── renderer / scene ───────────────────────────────────────────────────────
 const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
-renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+// mobile guard: phones pay full price for bloom + retina — cap both
+const isMobile = !navigator.xr?.isSessionSupported && 'ontouchstart' in window
+  && Math.min(window.innerWidth, window.innerHeight) < 820;
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, isMobile ? 1.25 : 2));
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.xr.enabled = true;
 renderer.xr.setReferenceSpaceType('local-floor');
@@ -676,7 +679,7 @@ renderer.setAnimationLoop(() => {
     runeRings.update(dt);
     lightning.update(dt);
     ambient.update(dt, state, state.slowTimer > 0);
-    bloom.strength = ambient.bloomStrength;
+    bloom.strength = ambient.bloomStrength * (isMobile ? 0.55 : 1);
     const musicOn = meta.data.settings.musicOn ? 1 : 0;
     audio.setMusicIntensity(state.phase === 'playing' && state.waveState === 'active'
       ? Math.min(1, 0.15 + (state.wave - 1) / 8) * musicOn
